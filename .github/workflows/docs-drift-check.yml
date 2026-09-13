@@ -1,0 +1,63 @@
+name: docs-drift-check
+
+# Cheap guardrail against PLAN.md's documented contract silently drifting
+# from the implementation: greps each service's source for a handful of the
+# field names PLAN.md says that service owns. This is NOT a real JSON-schema
+# diff — it just catches the case where a field gets renamed in code but the
+# doc (or vice versa) doesn't get updated.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check PLAN.md contract fields appear in service source
+        shell: bash
+        run: |
+          set +e
+          fail=0
+
+          check_field() {
+            local dir="$1" field="$2"
+            if [ ! -d "$dir" ]; then
+              echo "::warning::$dir does not exist yet — skipping field check for '$field'."
+              return 0
+            fi
+            if ! grep -rIl -- "$field" "$dir" >/dev/null 2>&1; then
+              echo "::error::Documented field '$field' (see PLAN.md contract) has zero matches in $dir/. The implementation may have drifted from PLAN.md — update the code or the doc so they match."
+              fail=1
+            fi
+          }
+
+          # scraper-service owns the Mongo schema and the /internal/espn/*
+          # response shape (league, data_type, season, scraped_at, data,
+          # age_seconds, stale).
+          for f in league data_type season scraped_at age_seconds stale; do
+            check_field "scraper-service" "$f"
+          done
+
+          # api-gateway owns the POST /api/ask response shape
+          # (answer_type, summary, generated_at).
+          for f in answer_type summary generated_at; do
+            check_field "api-gateway" "$f"
+          done
+
+          # frontend renders the POST /api/ask response shape, so it should
+          # at least reference the same field names.
+          for f in answer_type summary; do
+            check_field "frontend" "$f"
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "docs-drift-check failed: one or more field names documented in PLAN.md's contract sections were not found anywhere in the service that owns them."
+            exit 1
+          fi
+
+          echo "docs-drift-check passed (or all relevant service directories don't exist yet)."
