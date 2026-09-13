@@ -1,0 +1,59 @@
+name: api-gateway-ci
+
+on:
+  push:
+    paths:
+      - "api-gateway/**"
+      - ".github/workflows/api-gateway-ci.yml"
+  pull_request:
+    paths:
+      - "api-gateway/**"
+      - ".github/workflows/api-gateway-ci.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # api-gateway/ may not exist yet on this branch until the api-gateway
+      # task merges. Skip gracefully instead of going red. See
+      # infra/README.md for why this guard exists.
+      - name: Check api-gateway/ is present
+        id: gate
+        shell: bash
+        run: |
+          if [ -f "api-gateway/pom.xml" ] || [ -f "api-gateway/build.gradle" ] || [ -f "api-gateway/build.gradle.kts" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::api-gateway/ has no pom.xml or build.gradle(.kts) yet — skipping (expected before that task merges)."
+          fi
+
+      - name: Set up JDK
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Build and test
+        if: steps.gate.outputs.run == 'true'
+        working-directory: api-gateway
+        shell: bash
+        run: |
+          if [ -f pom.xml ]; then
+            if [ -f mvnw ]; then
+              chmod +x mvnw
+              ./mvnw -B test
+            else
+              mvn -B test
+            fi
+          elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
+            if [ -f gradlew ]; then
+              chmod +x gradlew
+              ./gradlew test
+            else
+              gradle test
+            fi
+          fi
