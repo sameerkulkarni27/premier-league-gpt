@@ -1,0 +1,71 @@
+name: scraper-service-ci
+
+on:
+  push:
+    paths:
+      - "scraper-service/**"
+      - ".github/workflows/scraper-service-ci.yml"
+  pull_request:
+    paths:
+      - "scraper-service/**"
+      - ".github/workflows/scraper-service-ci.yml"
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # scraper-service/ may not exist yet on this branch until the
+      # scraper-service task merges. Skip gracefully instead of going red.
+      # See infra/README.md for why this guard exists.
+      - name: Check scraper-service/ is present
+        id: gate
+        shell: bash
+        run: |
+          if [ -f "scraper-service/requirements.txt" ] || [ -f "scraper-service/pyproject.toml" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::scraper-service/ has no requirements.txt or pyproject.toml yet — skipping (expected before that task merges)."
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scraper-service/requirements*.txt
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        working-directory: scraper-service
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          [ -f requirements.txt ] && pip install -r requirements.txt
+          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt
+          pip install flake8 ruff
+
+      - name: Lint
+        if: steps.gate.outputs.run == 'true'
+        working-directory: scraper-service
+        shell: bash
+        run: |
+          if [ -f ruff.toml ] || grep -q "\[tool.ruff\]" pyproject.toml 2>/dev/null; then
+            ruff check .
+          else
+            flake8 . --max-line-length=120
+          fi
+
+      - name: Test
+        if: steps.gate.outputs.run == 'true'
+        working-directory: scraper-service
+        shell: bash
+        run: |
+          if [ -f manage.py ]; then
+            python manage.py test
+          else
+            pytest
+          fi
