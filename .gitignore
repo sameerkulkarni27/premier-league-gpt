@@ -1,0 +1,30 @@
+# env
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+frontend/build/
+frontend/dist/
+
+# java
+api-gateway/target/
+api-gateway/.mvn/
+*.class
+
+# python
+scraper-service/**/__pycache__/
+scraper-service/**/*.pyc
+scraper-service/venv/
+scraper-service/.venv/
+scraper-service/db.sqlite3
+
+# infra
+infra/**/*.log
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
